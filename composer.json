@@ -1,0 +1,31 @@
+{
+  "name": "axinter/azureblobstorage",
+  "description": "Azure Blob Storage integration for Symfony and Laravel",
+  "type": "library",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Joakim Stenberg",
+      "email": "joakim.stenberg@axinter.com"
+    }
+  ],
+  "require": {
+    "php": "^8.1",
+    "guzzlehttp/guzzle": "^7.0"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^10.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "AxInter\\AzureBlobStorage\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "AxInter\\AzureBlobStorage\\Tests\\": "tests/"
+    }
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true
+}
