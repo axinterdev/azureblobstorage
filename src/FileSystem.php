@@ -9,7 +9,7 @@ use AxInter\AzureBlobStorage\Exceptions\InvalidStreamException;
 use AxInter\AzureBlobStorage\Exceptions\VersionNotFoundException;
 use AxInter\AzureBlobStorage\Interfaces\FileSystemInterface;
 use AzureOss\Storage\Common\Auth\StorageSharedKeyCredential;
-use AzureOss\Storage\Common\Middleware\AddAuthorizationHeaderMiddleware;
+use AzureOss\Storage\Common\Middleware\AddSharedKeyAuthorizationHeaderMiddleware;
 use GuzzleHttp\Client;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Exception\ClientException;
@@ -25,16 +25,16 @@ class FileSystem implements FileSystemInterface
     {
         $this->config = $config;
         $this->container = $container;
-        
+
         // Use azure-oss authentication middleware
         $credential = new StorageSharedKeyCredential(
             $config->getAccountName(),
             $config->getAccountKey()
         );
-        
+
         $stack = HandlerStack::create();
-        $stack->push(new AddAuthorizationHeaderMiddleware($credential));
-        
+        $stack->push(new AddSharedKeyAuthorizationHeaderMiddleware($credential));
+
         $this->client = new Client([
             'base_uri' => rtrim($config->getBlobEndpoint(), '/') . '/',
             'handler' => $stack,
@@ -49,7 +49,7 @@ class FileSystem implements FileSystemInterface
             if ($this->exists($path)) {
                 $timestamp = time();
                 $versionPath = ".versions/{$path}/" . $timestamp;
-                
+
                 // Copy current version to version history
                 try {
                     $this->copy($path, $versionPath);
@@ -57,9 +57,9 @@ class FileSystem implements FileSystemInterface
                     // If versioning copy fails, continue with write
                 }
             }
-            
+
             $url = "{$this->container}/{$path}";
-            
+
             $this->client->put($url, [
                 'headers' => [
                     'x-ms-date' => gmdate('D, d M Y H:i:s T'),
@@ -73,6 +73,11 @@ class FileSystem implements FileSystemInterface
         } catch (GuzzleException $e) {
             return false;
         }
+    }
+
+    public function push(string $path, string $contents): bool
+    {
+        return $this->write($path, $contents);
     }
 
     public function get(string $path): ?string
@@ -187,7 +192,7 @@ class FileSystem implements FileSystemInterface
         try {
             $sourceUrl = "{$this->config->getBlobEndpoint()}/{$this->container}/{$source}";
             $destUrl = "{$this->container}/{$destination}";
-            
+
             $headers = array_merge($this->getStandardHeaders(), [
                 'x-ms-copy-source' => $sourceUrl,
             ]);
@@ -283,7 +288,7 @@ class FileSystem implements FileSystemInterface
         try {
             $url = "{$this->container}/{$path}";
             $query = ['comp' => 'metadata'];
-            
+
             $metadataHeaders = [];
             foreach ($metadata as $key => $value) {
                 $metadataHeaders["x-ms-meta-{$key}"] = $value;
@@ -384,7 +389,7 @@ class FileSystem implements FileSystemInterface
         try {
             // For Azurite: Use custom versioning from .versions folder
             $versionPrefix = ".versions/{$path}/";
-            
+
             $url = "{$this->container}";
             $query = [
                 'restype' => 'container',
@@ -407,7 +412,7 @@ class FileSystem implements FileSystemInterface
                     $metadata = $this->getMetadata($path);
                     $size = $this->getSize($path);
                     $mimeType = $this->getMimeType($path);
-                    
+
                     $versions[] = [
                         'version_id' => $metadata['version-timestamp'] ?? 'current',
                         'is_current_version' => true,
@@ -439,7 +444,7 @@ class FileSystem implements FileSystemInterface
             }
 
             // Sort by timestamp descending (newest first)
-            usort($versions, function($a, $b) {
+            usort($versions, function ($a, $b) {
                 $aTime = is_numeric($a['version_id']) ? (int)$a['version_id'] : time();
                 $bTime = is_numeric($b['version_id']) ? (int)$b['version_id'] : time();
                 return $bTime - $aTime;
@@ -459,13 +464,13 @@ class FileSystem implements FileSystemInterface
             if ($versionId === 'current') {
                 return $this->get($path);
             }
-            
+
             $versionPath = ".versions/{$path}/{$versionId}";
-            
+
             if (!$this->exists($versionPath)) {
                 throw new VersionNotFoundException($path, $versionId);
             }
-            
+
             return $this->get($versionPath);
         } catch (VersionNotFoundException $e) {
             throw $e;
@@ -487,13 +492,13 @@ class FileSystem implements FileSystemInterface
             if ($versionId === 'current') {
                 return false;
             }
-            
+
             $versionPath = ".versions/{$path}/{$versionId}";
-            
+
             if (!$this->exists($versionPath)) {
                 return false;
             }
-            
+
             return $this->delete($versionPath);
         } catch (GuzzleException $e) {
             return false;
@@ -506,11 +511,11 @@ class FileSystem implements FileSystemInterface
             // For custom versioning: Restore is same as promote
             // Get the version content and write it (which creates a new version)
             $content = $this->getVersion($path, $versionId);
-            
+
             if ($content === null) {
                 return false;
             }
-            
+
             return $this->write($path, $content);
         } catch (\Exception $e) {
             return false;
@@ -522,19 +527,19 @@ class FileSystem implements FileSystemInterface
         try {
             // For custom versioning: Copy the versioned blob back to the main path
             $versionPath = ".versions/{$path}/{$versionId}";
-            
+
             // First, check if the version exists
             if (!$this->exists($versionPath)) {
                 return false;
             }
-            
+
             // Save current version before promoting (to maintain history)
             if ($this->exists($path)) {
                 $timestamp = time();
                 $backupPath = ".versions/{$path}/" . $timestamp;
                 $this->copy($path, $backupPath);
             }
-            
+
             // Copy the old version to become the current version
             $this->copy($versionPath, $path);
 
@@ -589,7 +594,7 @@ class FileSystem implements FileSystemInterface
         ]);
 
         $signature = base64_encode(hash_hmac('sha256', $stringToSign, base64_decode($this->config->getAccountKey()), true));
-        
+
     }
 
     private function buildCanonicalizedHeaders(array $headers): string
@@ -608,7 +613,7 @@ class FileSystem implements FileSystemInterface
     private function buildCanonicalizedResource(string $url, array $query = []): string
     {
         $resource = "/{$this->config->getAccountName()}/{$url}";
-        
+
         if (!empty($query)) {
             ksort($query);
             foreach ($query as $key => $value) {
