@@ -525,26 +525,16 @@ class FileSystem implements FileSystemInterface
     public function promoteVersion(string $path, string $versionId): bool
     {
         try {
-            // For custom versioning: Copy the versioned blob back to the main path
-            $versionPath = ".versions/{$path}/{$versionId}";
+            // For custom versioning: Promote is same as restore
+            // Get the version content and write it (which creates a new version)
+            $content = $this->getVersion($path, $versionId);
 
-            // First, check if the version exists
-            if (!$this->exists($versionPath)) {
+            if ($content === null) {
                 return false;
             }
 
-            // Save current version before promoting (to maintain history)
-            if ($this->exists($path)) {
-                $timestamp = time();
-                $backupPath = ".versions/{$path}/" . $timestamp;
-                $this->copy($path, $backupPath);
-            }
-
-            // Copy the old version to become the current version
-            $this->copy($versionPath, $path);
-
-            return true;
-        } catch (GuzzleException $e) {
+            return $this->write($path, $content);
+        } catch (\Exception $e) {
             return false;
         }
     }
